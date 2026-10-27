@@ -1,5 +1,5 @@
-import { CAREER_PROFILES, type CareerProfile } from "../data/careers";
-import { INTEREST_ITEMS } from "../data/assessment";
+import { CAREER_PROFILES, type CareerProfile } from "../data/careers.js";
+import { INTEREST_ITEMS } from "../data/assessment.js";
 import {
   INSTRUMENT_VERSION,
   RIASEC,
@@ -12,7 +12,7 @@ import {
   type RiasecCode,
   type SkillKey,
   type ValueKey,
-} from "./types";
+} from "./types.js";
 
 const clamp = (value: number, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 const round = (value: number) => Math.round(value);
