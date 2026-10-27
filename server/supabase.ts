@@ -16,15 +16,19 @@ export async function counselorForToken(token: string) {
   const url = process.env.SUPABASE_URL;
   const publicKey = process.env.SUPABASE_ANON_KEY;
   if (!url || !publicKey) throw new Error("Supabase Auth is not configured on the server.");
-  const authClient = createClient(url, publicKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
+  const response = await fetch(`${url.replace(/\/+$/, "")}/auth/v1/user`, {
+    method: "GET",
+    headers: { apikey: publicKey, Authorization: `Bearer ${token}` },
+    cache: "no-store",
   });
-  const { data, error } = await authClient.auth.getUser(token);
-  if (error || !data.user?.email) return null;
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok || typeof payload !== "object" || payload === null) return null;
+  const user = payload as { id?: unknown; email?: unknown };
+  if (typeof user.id !== "string" || typeof user.email !== "string") return null;
   const allowedEmails = (process.env.COUNSELOR_EMAILS ?? "")
     .split(",")
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
-  if (!allowedEmails.includes(data.user.email.toLowerCase())) return null;
-  return data.user;
+  if (!allowedEmails.includes(user.email.toLowerCase())) return null;
+  return { id: user.id, email: user.email };
 }
