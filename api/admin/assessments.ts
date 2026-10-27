@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { counselorForToken, getAdminSupabase } from "../../server/supabase";
+import { counselorForToken, getAdminSupabase } from "../../server/supabase.js";
 
 function safeFilterTerm(value: string | null, maximumLength: number): string {
   if (!value) return "";

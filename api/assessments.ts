@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { CONSENT_VERSION, INSTRUMENT_VERSION } from "../src/lib/types";
-import { scoreAssessment } from "../src/lib/scoring";
-import { getAdminSupabase } from "../server/supabase";
-import { submissionSchema } from "../server/validation";
+import { CONSENT_VERSION, INSTRUMENT_VERSION } from "../src/lib/types.js";
+import { scoreAssessment } from "../src/lib/scoring.js";
+import { getAdminSupabase } from "../server/supabase.js";
+import { submissionSchema } from "../server/validation.js";
 
 function isSameSiteRequest(req: VercelRequest): boolean {
   const origin = req.headers.origin;
