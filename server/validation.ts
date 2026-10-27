@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { INTEREST_ITEMS } from "../src/data/assessment";
+import { INTEREST_ITEMS } from "../src/data/assessment.js";
 import type { SkillKey, WorkstyleKey } from "../src/lib/types";
 
 const rating = z.number().int().min(1).max(5);
