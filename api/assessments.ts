@@ -52,7 +52,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .single();
 
     if (error || !data) {
-      console.error("Assessment persistence failed", error?.code ?? "unknown database error");
+      const dbError = error as { code?: unknown; name?: unknown; message?: unknown } | null;
+      console.error("Assessment persistence failed", {
+        code: typeof dbError?.code === "string" ? dbError.code : null,
+        name: typeof dbError?.name === "string" ? dbError.name : null,
+        message: typeof dbError?.message === "string" ? dbError.message.slice(0, 300) : "No database error message returned",
+      });
       return res.status(503).json({ error: "We could not save your assessment just now. Please try again or contact your advisor." });
     }
     return res.status(201).json({ id: data.id, result });
