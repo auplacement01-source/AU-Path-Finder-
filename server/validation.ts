@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { INTEREST_ITEMS } from "../src/data/assessment.js";
-import type { SkillKey, WorkstyleKey } from "../src/lib/types";
+import type { SkillKey, WorkstyleKey } from "../src/lib/types.js";
 
 const rating = z.number().int().min(1).max(5);
 const interestShape = Object.fromEntries(INTEREST_ITEMS.map((item) => [item.id, rating]));
