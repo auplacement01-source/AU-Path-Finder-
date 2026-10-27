@@ -1,74 +1,53 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { CONSENT_VERSION, INSTRUMENT_VERSION } from "../src/lib/types.js";
-import { scoreAssessment } from "../src/lib/scoring.js";
-import { getAdminSupabase } from "../server/supabase.js";
-import { submissionSchema } from "../server/validation.js";
+import { counselorForToken, getAdminSupabase } from "../../server/supabase.js";
 
-function isSameSiteRequest(req: VercelRequest): boolean {
-  const origin = req.headers.origin;
-  const host = req.headers["x-forwarded-host"] ?? req.headers.host;
-  if (!origin || !host) return false;
-  try {
-    return Boolean(host && new URL(origin).host === host);
-  } catch {
-    return false;
-  }
+function safeFilterTerm(value: string | null, maximumLength: number): string {
+  if (!value) return "";
+  return value.normalize("NFKC").replace(/[^\p{L}\p{N}\s@._-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, maximumLength);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-
   res.setHeader("Cache-Control", "private, no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
-  if (req.method !== "POST") return res.status(405).json({ error: "Use POST to submit an assessment." });
-  if (!isSameSiteRequest(req)) return res.status(403).json({ error: "This request could not be verified." });
+  if (req.method !== "GET") return res.status(405).json({ error: "Use GET to read counselor records." });
 
-  const parsed = submissionSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "Some answers are missing or invalid. Review each step and try again." });
-  }
-  if (parsed.data.website?.trim()) {
-    return res.status(202).json({ ok: true });
-  }
+  const authorization = req.headers.authorization;
+  const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!token) return res.status(401).json({ error: "Sign in with an authorized counselor account." });
 
   try {
-    const submission = parsed.data;
-    const result = scoreAssessment(submission.answers, submission.profile.degreeField);
-    const supabase = getAdminSupabase();
-    const { data, error } = await supabase
-      .from("assessments")
-      .insert({
-        student_name: submission.profile.name,
-        registration_number: submission.profile.registration,
-        program: submission.profile.program,
-        semester: submission.profile.semester,
-        degree_field: submission.profile.degreeField,
-        instrument_version: INSTRUMENT_VERSION,
-        consent_version: CONSENT_VERSION,
-        consented_at: new Date().toISOString(),
-        answers: submission.answers,
-        result,
-      })
-      .select("id")
-      .single();
+    const counselor = await counselorForToken(token);
+    if (!counselor) return res.status(403).json({ error: "This account is not on the counselor access list." });
+    const url = new URL(req.url ?? "/", `https://${req.headers.host ?? "localhost"}`);
+    const offsetValue = Number(url.searchParams.get("offset") ?? 0);
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 50);
+    const offset = Number.isSafeInteger(offsetValue) ? Math.max(0, Math.min(offsetValue, 100000)) : 0;
+    const limit = Number.isSafeInteger(requestedLimit) ? Math.max(1, Math.min(requestedLimit, 100)) : 50;
+    const search = safeFilterTerm(url.searchParams.get("q"), 120);
+    const program = safeFilterTerm(url.searchParams.get("program"), 160);
+    const semester = safeFilterTerm(url.searchParams.get("semester"), 40);
 
-    if (error || !data) {
-      const dbError = error as { code?: unknown; name?: unknown; message?: unknown } | null;
-      console.error("Assessment persistence failed", {
-        code: typeof dbError?.code === "string" ? dbError.code : null,
-        name: typeof dbError?.name === "string" ? dbError.name : null,
-        message: typeof dbError?.message === "string" ? dbError.message.slice(0, 300) : "No database error message returned",
-      });
-      return res.status(503).json({ error: "We could not save your assessment just now. Please try again or contact your advisor." });
+    const supabase = getAdminSupabase();
+    let recordsQuery = supabase
+      .from("assessments")
+      .select("id,created_at,student_name,registration_number,program,semester,degree_field,instrument_version,consent_version,result", { count: "exact" });
+    if (search) {
+      const pattern = `%${search}%`;
+      recordsQuery = recordsQuery.or(`student_name.ilike.${pattern},registration_number.ilike.${pattern},program.ilike.${pattern}`);
     }
-    return res.status(201).json({ id: data.id, result });
+    if (program) recordsQuery = recordsQuery.ilike("program", `%${program}%`);
+    if (semester) recordsQuery = recordsQuery.ilike("semester", `%${semester}%`);
+    const { data, count, error } = await recordsQuery
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (error) {
+      console.error("Counselor record query failed", error.code);
+      return res.status(503).json({ error: "Student records are temporarily unavailable." });
+    }
+    return res.status(200).json({ records: data ?? [], total: count ?? 0, offset, limit });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Unknown server error";
-    const missingSetup = detail.includes("not configured");
-    console.error("Assessment service unavailable", missingSetup ? "Supabase setup required" : "unexpected server error");
-    return res.status(missingSetup ? 503 : 500).json({
-      error: missingSetup
-        ? "Assessment saving is not configured yet. Please contact your university advisor."
-        : "We could not save your assessment just now. Please try again or contact your advisor.",
-    });
+    const missingSetup = error instanceof Error && error.message.includes("not configured");
+    console.error("Counselor service unavailable", missingSetup ? "Supabase setup required" : "unexpected server error");
+    return res.status(missingSetup ? 503 : 500).json({ error: missingSetup ? "Counselor access is not configured yet." : "Student records are temporarily unavailable." });
   }
 }
